@@ -1,5 +1,7 @@
 # esphome-daikin-s21
 
+:warning: Consider [asund's fork](https://github.com/asund/esphome-daikin-s21), which may be better-maintained than this one.
+
 ESPHome component to control Daikin indoor mini-split units with s21 ports.
 
 Many thanks to the work by [revk][1] on the fantastic [Faikin][2] project, which

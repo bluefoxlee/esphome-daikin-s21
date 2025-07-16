@@ -432,12 +432,5 @@ void DaikinS21Climate::set_s21_climate() {
   this->save_setpoint(this->target_temperature);
 }
 
-namespace esphome {
-namespace daikin_s21 {
-
-void DaikinS21Climate::set_supported_modes(const std::set<climate::ClimateMode> &modes) {
-  // ESP8266 無支援，空實作即可。
-}
-
 }  // namespace daikin_s21
 }  // namespace esphome

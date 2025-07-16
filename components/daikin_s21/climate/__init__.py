@@ -13,6 +13,7 @@ from .. import (
     DaikinS21Client,
 )
 from esphome.components.climate import ClimateMode
+from esphome.const import CONF_SUPPORTED_MODES
 
 CONF_ROOM_TEMPERATURE_SENSOR = "room_temperature_sensor"
 CONF_SETPOINT_INTERVAL = "setpoint_interval"

@@ -434,3 +434,6 @@ void DaikinS21Climate::set_s21_climate() {
 
 }  // namespace daikin_s21
 }  // namespace esphome
+void esphome::daikin_s21::DaikinS21Climate::set_supported_modes(const std::set<esphome::climate::ClimateMode> &modes) {
+  // dummy for esp8266
+}

@@ -33,9 +33,9 @@ SUPPORTED_CLIMATE_MODES_OPTIONS = {
 }
 
 CONFIG_SCHEMA = cv.All(
-    climate.CLIMATE_SCHEMA.extend(
+    climate.climate_schema(DaikinS21Climate)
+     .extend(
         {
-            cv.GenerateID(): cv.declare_id(DaikinS21Climate),
             cv.Optional(CONF_ROOM_TEMPERATURE_SENSOR): cv.use_id(sensor.Sensor),
             cv.Optional(
                 CONF_SETPOINT_INTERVAL, default="300s"
@@ -52,9 +52,8 @@ CONFIG_SCHEMA = cv.All(
 
 async def to_code(config):
     """Generate code"""
-    var = cg.new_Pvariable(config[CONF_ID])
+    var = await climate.new_climate(config)
     await cg.register_component(var, config)
-    await climate.register_climate(var, config)
     s21_var = await cg.get_variable(config[CONF_S21_ID])
     cg.add(var.set_s21(s21_var))
     if CONF_ROOM_TEMPERATURE_SENSOR in config:

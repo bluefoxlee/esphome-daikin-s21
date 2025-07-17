@@ -846,7 +846,8 @@ void DaikinS21::dump_state() {
       }
       return str;
     };
-    ESP_LOGD(TAG, LOG_STR_ARG(("Queries: " + comma_join(this->queries)).c_str()));
+#    ESP_LOGD(TAG, LOG_STR_ARG(("Queries: " + comma_join(this->queries)).c_str()));
+    ESP_LOGD(TAG, "Queries: %s", comma_join(this->queries).c_str());
     ESP_LOGD(TAG, LOG_STR_ARG(("  Nak'd: " + comma_join(this->nak_queries)).c_str()));
   }
 

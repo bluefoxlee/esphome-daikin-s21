@@ -1,43 +1,20 @@
 #pragma once
 
 #include <bitset>
+#include <limits>
 #include <vector>
+#include "esphome/components/climate/climate.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
+#include "daikin_s21_fan_modes.h"
 
 namespace esphome {
 namespace daikin_s21 {
 
-enum class DaikinClimateMode : uint8_t {
-  Disabled = '0',
-  Auto = '1',
-  Dry = '2',
-  Cool = '3',
-  Heat = '4',
-  Fan = '6',
-};
-
-enum class DaikinFanMode : uint8_t {
-  Auto = 'A',
-  Silent = 'B',
-  Speed1 = '3',
-  Speed2 = '4',
-  Speed3 = '5',
-  Speed4 = '6',
-  Speed5 = '7',
-};
-
-std::string daikin_climate_mode_to_string(DaikinClimateMode mode);
-std::string daikin_fan_mode_to_string(DaikinFanMode mode);
-
-inline float c10_c(int16_t c10) { return c10 / 10.0; }
-inline float c10_f(int16_t c10) { return c10_c(c10) * 1.8 + 32.0; }
-
-
 class DaikinSerial {
 public:
-  static constexpr uint32_t S21_MAX_COMMAND_SIZE = 4;
-  static constexpr uint32_t S21_PAYLOAD_SIZE = 4;
+  static constexpr uint32_t S21_MAX_COMMAND_SIZE{4};
+  static constexpr uint32_t S21_PAYLOAD_SIZE{4};
 
   enum class Result : uint8_t {
     Idle,
@@ -48,122 +25,182 @@ public:
     Busy,
   };
   
-  void set_uarts(uart::UARTComponent *tx, uart::UARTComponent *rx);
+  DaikinSerial() {};
+  DaikinSerial(uart::UARTComponent *tx, uart::UARTComponent *rx);
+  
   Result service();
   Result send_frame(const char *cmd, const std::array<char, S21_PAYLOAD_SIZE> *payload = nullptr);
   void flush_input();
   
-  std::vector<uint8_t> response = {};
-  bool debug = false;
+  std::vector<uint8_t> response{};
+  bool debug{false};
 
 private:
-  static constexpr uint32_t S21_RESPONSE_TURNAROUND = 50; // allow some time for the unit to begin listening after it sends
-  static constexpr uint32_t S21_RESPONSE_TIMEOUT = 250; // character timeout when expecting a response from the unit
-  static constexpr uint32_t S21_ERROR_TIMEOUT = 3000; // cooldown time when something goes wrong
-
   Result handle_rx(uint8_t byte);
 
   enum class CommState : uint8_t {
     Idle,
-    Cooldown,
+    CommandAck,
     QueryAck,
     QueryStx,
     QueryEtx,
-    CommandAck,
+    AckResponseDelay,
+    NextTxDelay,
+    ErrorDelay,
   };
 
   uart::UARTComponent *tx_uart{nullptr};
   uart::UARTComponent *rx_uart{nullptr};
-  CommState comm_state = CommState::Idle;
-  uint32_t last_event_time = 0;
-  uint32_t cooldown_length = 0;
+  CommState comm_state{CommState::Idle};
+  uint32_t last_event_time_ms{0};
 };
 
+/**
+ * Class representing a temperature in degrees C scaled by 10, the most granular internal temperature measurement format
+ */
+struct DaikinC10 {
+  template <typename T, typename std::enable_if<std::is_floating_point<T>::value, bool>::type = true>
+  constexpr DaikinC10(const T valf) : value((static_cast<int16_t>(valf * 10 * 2) + 1) / 2) {} // round to nearest 0.1C
+
+  template <typename T, typename std::enable_if<std::is_integral<T>::value, bool>::type = true>
+  constexpr DaikinC10(const T vali) : value(vali) {}
+
+  explicit constexpr operator float() const { return value / 10.0F; }
+  explicit constexpr operator int16_t() const { return value; }
+  constexpr float f_degc() const { return static_cast<float>(*this); }
+  constexpr float f_degf() const { return static_cast<float>(*this) * 1.8F + 32.0F; }
+
+  constexpr bool operator==(const DaikinC10 &other) const { return this->value == other.value; }
+  
+private:
+  int16_t value;
+};
 
 struct DaikinSettings {
-  bool power_on = false;
-  DaikinClimateMode mode = DaikinClimateMode::Disabled;
-  DaikinFanMode fan = DaikinFanMode::Auto;
-  int16_t setpoint = 23;
-  bool swing_v = false;
-  bool swing_h = false;
-};
+  climate::ClimateMode mode{climate::CLIMATE_MODE_OFF};
+  DaikinC10 setpoint{23};
+  DaikinFanMode fan{DaikinFanMode::Auto};
+  climate::ClimateSwingMode swing{climate::CLIMATE_SWING_OFF};
 
+  constexpr bool operator==(const DaikinSettings &other) const {
+    return (this->mode == other.mode) &&
+           (this->setpoint == other.setpoint) &&
+           (this->fan == other.fan) &&
+           (this->swing == other.swing);
+  }
+};
 
 class DaikinS21 : public PollingComponent {
  public:
-  DaikinSerial serial;
-
   void setup() override;
   void loop() override;
   void update() override;
   void dump_config() override;
 
-  void set_debug_protocol(bool set) { this->debug_protocol = set; this->serial.debug = set; }
+  void set_uarts(uart::UARTComponent *tx, uart::UARTComponent *rx) { this->serial = {tx, rx}; }
+  void set_debug_comms(bool set) { this->serial.debug = set; }
+  void set_debug_protocol(bool set) { this->debug_protocol = set; }
+
+  // external command action
+  void set_climate_settings(const DaikinSettings &settings);
+  const DaikinSettings& get_climate_settings() { return this->active; };
 
   bool is_ready() { return this->ready.all(); }
-
-  bool is_power_on() { return this->active.power_on; }
-  DaikinClimateMode get_climate_mode() { return this->active.mode; }
+  climate::ClimateMode get_climate_mode() { return this->active.mode; }
+  climate::ClimateAction get_climate_action();
   DaikinFanMode get_fan_mode() { return this->active.fan; }
-  float get_setpoint() { return this->active.setpoint / 10.0; }
-  bool get_swing_h() { return this->active.swing_h; }
-  bool get_swing_v() { return this->active.swing_v; }
+  climate::ClimateSwingMode get_swing_mode() { return this->active.swing; }
+  auto get_setpoint() { return this->active.setpoint.f_degc(); }
+  auto get_temp_inside() { return this->temp_inside.f_degc(); }
+  auto get_temp_outside() { return this->temp_outside.f_degc(); }
+  auto get_temp_coil() { return this->temp_coil.f_degc(); }
+  auto get_fan_rpm() { return this->fan_rpm; }
+  auto get_swing_vertical_angle() { return this->swing_vertical_angle; }
+  auto get_compressor_frequency() { return this->compressor_hz; }
+  auto get_humidity() { return this->humidity; }
+  auto get_demand() { return this->demand; }
 
-  // external command actions
-  void set_daikin_climate_settings(bool power_on, DaikinClimateMode mode,
-                                   float setpoint, DaikinFanMode fan_mode);
-  void set_swing_settings(bool swing_v, bool swing_h);
+  bool climate_updated = false;
 
-  float get_temp_inside() { return this->temp_inside / 10.0; }
-  float get_temp_outside() { return this->temp_outside / 10.0; }
-  float get_temp_coil() { return this->temp_coil / 10.0; }
-  uint16_t get_fan_rpm() { return this->fan_rpm; }
-  uint8_t get_swing_vertical_angle() { return this->swing_vertical_angle; }
-  uint16_t get_compressor_frequency() { return this->compressor_hz; }
-  bool is_idle() { return this->compressor_hz == 0; }
+  // temporary stubs, hide once supported
+  enum Modifier : uint8_t {
+    ModifierQuiet,    // outdoor unit limit
+    ModifierEcono,    // limits demand for power consumption
+    ModifierPowerful, // maximum output (20 minute timeout), mutaully exclusive with quiet and econo
+    ModifierComfort,  // fan angle depends on heating/cooling action
+    ModifierStreamer, // electron emitter decontamination?
+    ModifierSensor,   // "intelligent eye" PIR occupancy setpoint offset
+    ModifierLED,      // the sensor LED is on
+    ModifierCount,    // just for bitset sizing
+  };
+  std::bitset<ModifierCount> modifiers{};
+
+  uint8_t unit_state{0};
+  uint8_t system_state{0};
 
  protected:
+  DaikinSerial serial;
+
   void dump_state();
   void refine_queries();
   void tx_next();
   void parse_ack();
   void handle_nak();
 
-  enum RequiredCommand : uint8_t {
+  enum ReadyCommand : uint8_t {
+    ReadyProtocolVersion,
+    ReadySensorReadout,
+    ReadyCapabilities,
     ReadyBasic,
-    ReadySwing,
-    ReadyCompressor,
     ReadyCount, // just for bitset sizing
   };
-  std::bitset<ReadyCount> ready = {};
+  std::bitset<ReadyCount> ready{};
 
   // communication state
-  std::vector<const char *> queries = {};
+  bool is_query_active(const char * query_str);
+  bool prune_query(const char * query_str);
+  std::vector<const char *> queries{};
   std::vector<const char *>::iterator current_query;
-  const char *tx_command = "";  // used when matching responses - value must have persistent lifetime
-  bool refresh_state = false;
-  bool debug_protocol = false;
-  std::unordered_map<std::string, std::vector<uint8_t>> val_cache;  // debugging
+  const char *tx_command{""};  // used when matching responses - value must have persistent lifetime across serial state machine runs
+  bool debug_protocol{false};
+  std::unordered_map<std::string, std::vector<uint8_t>> val_cache{};  // debugging
+  std::vector<const char *> nak_queries{};   // debugging
 
   // settings
-  DaikinSettings active = {};
-  DaikinSettings pending = {};
-  bool activate_climate = false;
-  bool activate_swing_mode = false;
+  DaikinSettings active{};
+  DaikinSettings pending{ .mode = climate::CLIMATE_MODE_AUTO }; // unsupported sentinel value, see set_climate_settings
+  bool activate_climate{false};
+  bool activate_swing_mode{false};
 
   // current values
-  int16_t temp_inside = 0;
-  int16_t temp_outside = 0;
-  int16_t temp_coil = 0;
-  uint16_t fan_rpm = 0;
-  int16_t swing_vertical_angle = 0;
-  uint8_t compressor_hz = 0;
+  climate::ClimateAction climate_action = climate::CLIMATE_ACTION_OFF;
+  DaikinC10 temp_inside{0};
+  DaikinC10 temp_target{0};
+  DaikinC10 temp_outside{0};
+  DaikinC10 temp_coil{0};
+  uint16_t fan_rpm{0};
+  int16_t swing_vertical_angle{0};
+  uint8_t compressor_hz{0};
+  uint8_t humidity{50};
+  uint8_t demand{0};
 
-  //protocol support
-  bool support_RG = false;
-  bool support_RH = false;
-  bool support_Ra = false;
+  // protocol support
+  bool determine_protocol_version();
+  struct DetectResponses {
+    std::array<uint8_t,4> G8{};
+    std::array<uint8_t,4> GC{};
+    uint16_t GY00{0};
+    std::array<uint8_t,4> M{};
+    std::array<uint8_t,4> V{};
+  } detect_responses;
+  struct ProtocolVersion {
+    uint8_t major{std::numeric_limits<uint8_t>::max()};
+    uint8_t minor{std::numeric_limits<uint8_t>::max()};
+  } protocol_version{};
+  char G2_model_info{0};
+  bool support_swing{false};
+  bool support_horizontal_swing{false};
+  bool support_humidity{false};
 };
 
 class DaikinS21Client {

@@ -11,6 +11,7 @@ DEPENDENCIES = ["uart"]
 CONF_TX_UART = "tx_uart"
 CONF_RX_UART = "rx_uart"
 CONF_S21_ID = "s21_id"
+CONF_DEBUG_COMMS = "debug_comms"
 CONF_DEBUG_PROTOCOL = "debug_protocol"
 
 daikin_s21_ns = cg.esphome_ns.namespace("daikin_s21")
@@ -24,9 +25,10 @@ CONFIG_SCHEMA = cv.Schema(
         cv.GenerateID(): cv.declare_id(DaikinS21),
         cv.Required(CONF_TX_UART): cv.use_id(UARTComponent),
         cv.Required(CONF_RX_UART): cv.use_id(UARTComponent),
+        cv.Optional(CONF_DEBUG_COMMS, default=False): cv.boolean,
         cv.Optional(CONF_DEBUG_PROTOCOL, default=False): cv.boolean,
     }
-).extend(cv.polling_component_schema("2s"))
+).extend(cv.polling_component_schema("30s"))
 
 S21_CLIENT_SCHEMA = cv.Schema(
     {
@@ -34,12 +36,12 @@ S21_CLIENT_SCHEMA = cv.Schema(
     }
 )
 
-
 async def to_code(config):
     """Generate code"""
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     tx_uart = await cg.get_variable(config[CONF_TX_UART])
     rx_uart = await cg.get_variable(config[CONF_RX_UART])
-    cg.add(var.serial.set_uarts(tx_uart, rx_uart))
+    cg.add(var.set_uarts(tx_uart, rx_uart))
+    cg.add(var.set_debug_comms(config[CONF_DEBUG_COMMS]))
     cg.add(var.set_debug_protocol(config[CONF_DEBUG_PROTOCOL]))

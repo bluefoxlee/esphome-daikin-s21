@@ -20,6 +20,18 @@ void DaikinS21Sensor::update() {
   if (this->fan_speed_sensor_ != nullptr) {
     this->fan_speed_sensor_->publish_state(this->s21->get_fan_rpm());
   }
+  if (this->swing_vertical_angle_sensor_ != nullptr) {
+    this->swing_vertical_angle_sensor_->publish_state(this->s21->get_swing_vertical_angle());
+  }
+  if (this->compressor_frequency_sensor_ != nullptr) {
+    this->compressor_frequency_sensor_->publish_state(this->s21->get_compressor_frequency());
+  }
+  if (this->humidity_sensor_ != nullptr) {
+    this->humidity_sensor_->publish_state(this->s21->get_humidity());
+  }
+  if (this->demand_sensor_ != nullptr) {
+    this->demand_sensor_->publish_state(this->s21->get_demand());
+  }
 }
 
 void DaikinS21Sensor::dump_config() {
@@ -28,6 +40,10 @@ void DaikinS21Sensor::dump_config() {
   LOG_SENSOR("  ", "Temperature Outside", this->temp_outside_sensor_);
   LOG_SENSOR("  ", "Temperature Coil", this->temp_coil_sensor_);
   LOG_SENSOR("  ", "Fan Speed", this->fan_speed_sensor_);
+  LOG_SENSOR("  ", "Swing Vertical Angle", this->swing_vertical_angle_sensor_);
+  LOG_SENSOR("  ", "Compressor Frequency", this->compressor_frequency_sensor_);
+  LOG_SENSOR("  ", "Humidity", this->humidity_sensor_);
+  LOG_SENSOR("  ", "Demand", this->demand_sensor_);
 }
 
 }  // namespace daikin_s21

@@ -1,5 +1,8 @@
 # esphome-daikin-s21
 
+:warning: This is personal fork, since I have 10+ ESP8266 untis still running (and limit to) Arduino framework. I am too lazy to replace all to ESP32. 
+:warning: 此 Fork 專案僅為個人為了繼續使用 ESP8266 控制（懶得拆換 ESP32）、藉由 AI 改寫專案。目前測試 2026.1.5 相容可執行。建議還是使用下方建議持續更新的 ESP32 專案。
+
 :warning: Consider [asund's fork](https://github.com/asund/esphome-daikin-s21), which may be better-maintained than this one.
 
 ESPHome component to control Daikin indoor mini-split units with s21 ports.

@@ -329,7 +329,8 @@ void DaikinS21Climate::update() {
       this->mode = climate::CLIMATE_MODE_OFF;
       this->action = climate::CLIMATE_ACTION_OFF;
     }
-    this->set_custom_fan_mode_(this->d2e_fan_mode(this->s21->get_fan_mode()));
+    const std::string fan = this->d2e_fan_mode(this->s21->get_fan_mode());
+    this->set_custom_fan_mode_(fan.c_str(), fan.size());
     this->swing_mode = this->d2e_swing_mode(this->s21->get_swing_v(),
                                             this->s21->get_swing_h());
     this->current_temperature = this->get_effective_current_temperature();
@@ -371,7 +372,8 @@ void DaikinS21Climate::update() {
 
 void DaikinS21Climate::control(const climate::ClimateCall &call) {
   float setpoint = this->target_temperature;
-  std::string fan_mode = this->custom_fan_mode.value_or("Automatic");
+  auto cfm = this->get_custom_fan_mode();  // StringRef
+  std::string fan_mode = (cfm.size() > 0) ? std::string(cfm.c_str(), cfm.size()) : "Automatic";
   bool set_basic = false;
 
   if (call.get_mode().has_value()) {
@@ -394,9 +396,13 @@ void DaikinS21Climate::control(const climate::ClimateCall &call) {
         nearest_step(call.get_target_temperature().value());
     set_basic = true;
   }
-  if (call.get_custom_fan_mode().has_value()) {
-    this->custom_fan_mode = call.get_custom_fan_mode().value();
-    set_basic = true;
+  if (call.has_custom_fan_mode()) {
+  auto req = call.get_custom_fan_mode();  // StringRef
+  // 1) 寫回 Climate 內建 custom fan mode
+  this->set_custom_fan_mode_(req.c_str(), req.size());
+  // 2) 同步我們等下要送去 S21 的字串
+  fan_mode.assign(req.c_str(), req.size());
+  set_basic = true;
   }
 
   if (set_basic) {
@@ -419,11 +425,16 @@ void DaikinS21Climate::set_s21_climate() {
   ESP_LOGI(TAG, "  Mode: %s", climate::climate_mode_to_string(this->mode));
   ESP_LOGI(TAG, "  Setpoint: %.1f (s21: %.1f)", this->target_temperature,
            this->expected_s21_setpoint);
-  ESP_LOGI(TAG, "  Fan: %s", this->custom_fan_mode.value().c_str());
+  // 取得 custom fan mode（ESPHome 2026.1.4 是 StringRef）
+  auto cfm = this->get_custom_fan_mode();  // StringRef
+  std::string fan_mode_str =
+      (cfm.size() > 0) ? std::string(cfm.c_str(), cfm.size()) : "Automatic";
+
+  ESP_LOGI(TAG, "  Fan: %s", fan_mode_str.c_str());
   this->s21->set_daikin_climate_settings(
       this->mode != climate::CLIMATE_MODE_OFF,
       this->e2d_climate_mode(this->mode), this->expected_s21_setpoint,
-      this->e2d_fan_mode(this->custom_fan_mode.value()));
+      this->e2d_fan_mode(fan_mode_str));
   // HVAC unit seems to take a few seconds to begin reporting mode and setpoint
   // changes back to the controller, so when modifying settings, setpoint checks
   // are skipped to avoid unexpected setpoint updates, especially when changing

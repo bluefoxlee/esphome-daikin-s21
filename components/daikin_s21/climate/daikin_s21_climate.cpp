@@ -29,7 +29,7 @@ void DaikinS21Climate::dump_config() {
   if (this->room_sensor_ != nullptr) {
     if (!this->room_sensor_unit_is_valid()) {
       ESP_LOGCONFIG(TAG, "  ROOM SENSOR: INVALID UNIT '%s' (must be °C or °F)",
-                    this->room_sensor_->get_unit_of_measurement().c_str());
+                    this->room_sensor_->get_unit_of_measurement_ref().c_str());
     } else {
       ESP_LOGCONFIG(TAG, "  Room sensor: %s",
                     this->room_sensor_->get_name().c_str());
@@ -42,13 +42,14 @@ void DaikinS21Climate::dump_config() {
 climate::ClimateTraits DaikinS21Climate::traits() {
   auto traits = climate::ClimateTraits();
 
-  traits.set_supports_action(true);
+  traits.add_feature_flags(
+      climate::CLIMATE_SUPPORTS_ACTION |
+      climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE
+  );
 
-  traits.set_supports_current_temperature(true);
   traits.set_visual_min_temperature(SETPOINT_MIN);
   traits.set_visual_max_temperature(SETPOINT_MAX);
   traits.set_visual_temperature_step(SETPOINT_STEP);
-  traits.set_supports_two_point_target_temperature(false);
 
   traits.set_supported_modes(
       {climate::CLIMATE_MODE_OFF, climate::CLIMATE_MODE_HEAT_COOL,
@@ -74,7 +75,7 @@ bool DaikinS21Climate::use_room_sensor() {
 
 bool DaikinS21Climate::room_sensor_unit_is_valid() {
   if (this->room_sensor_ != nullptr) {
-    auto u = this->room_sensor_->get_unit_of_measurement();
+    auto u = this->room_sensor_->get_unit_of_measurement_ref();
     return u == "°C" || u == "°F";
   }
   return false;
@@ -82,7 +83,7 @@ bool DaikinS21Climate::room_sensor_unit_is_valid() {
 
 float DaikinS21Climate::room_sensor_degc() {
   float temp = this->room_sensor_->get_state();
-  if (this->room_sensor_->get_unit_of_measurement() == "°F") {
+  if (this->room_sensor_->get_unit_of_measurement_ref() == "°F") {
     temp = fahrenheit_to_celsius(temp);
   }
   return temp;
@@ -317,7 +318,7 @@ void DaikinS21Climate::update() {
   if (this->use_room_sensor()) {
     ESP_LOGD(TAG, "Room temp from external sensor: %.1f %s (%.1f °C)",
              this->room_sensor_->get_state(),
-             this->room_sensor_->get_unit_of_measurement().c_str(),
+             this->room_sensor_->get_unit_of_measurement_ref().c_str(),
              this->room_sensor_degc());
     ESP_LOGD(TAG, "  Offset: %.1f", this->get_room_temp_offset());
   }

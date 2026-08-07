@@ -197,6 +197,7 @@ std::string str_repr(std::vector<uint8_t> &bytes) {
 }
 
 bool DaikinS21::read_frame(std::vector<uint8_t> &payload) {
+  ESP_LOGI(TAG, "read_frame() start");
   uint8_t byte;
   std::vector<uint8_t> bytes;
   uint32_t start = millis();
@@ -245,10 +246,12 @@ bool DaikinS21::read_frame(std::vector<uint8_t> &payload) {
     yield();
   }
   payload.assign(bytes.begin(), bytes.end());
+  ESP_LOGI(TAG, "read_frame() OK, len=%d", payload.size());
   return true;
 }
 
 void DaikinS21::write_frame(std::vector<uint8_t> frame) {
+  ESP_LOGI(TAG, "write_frame(): %s", str_repr(frame).c_str());
   this->tx_uart->write_byte(STX);
   this->tx_uart->write_array(frame);
   this->tx_uart->write_byte(s21_checksum(&frame[0], frame.size()));
@@ -261,6 +264,7 @@ bool DaikinS21::s21_query(std::vector<uint8_t> code) {
   for (size_t i = 0; i < code.size(); i++) {
     c += code[i];
   }
+  ESP_LOGI(TAG, "s21_query() start: %s", c.c_str());
   this->write_frame(code);
 
   uint8_t byte;
@@ -269,7 +273,7 @@ bool DaikinS21::s21_query(std::vector<uint8_t> code) {
     return false;
   }
   if (byte == NAK) {
-    ESP_LOGD(TAG, "NAK from S21 for %s query", c.c_str());
+    ESP_LOGW(TAG, "NAK from S21 for %s query", c.c_str());
     return false;
   }
   if (byte != ACK) {
@@ -295,7 +299,9 @@ bool DaikinS21::s21_query(std::vector<uint8_t> code) {
     }
   }
 
-  return parse_response(rcode, payload);
+  bool ok = parse_response(rcode, payload);
+  ESP_LOGI(TAG, "s21_query() end: %s -> %s", c.c_str(), ok ? "OK" : "FAIL");
+  return ok;
 }
 
 bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
@@ -361,6 +367,7 @@ bool DaikinS21::run_queries(std::vector<std::string> queries) {
   bool success = true;
 
   for (auto q : queries) {
+    ESP_LOGI(TAG, "run_queries(): %s", q.c_str());
     std::vector<uint8_t> code(q.begin(), q.end());
     success = this->s21_query(code) && success;
   }
@@ -369,9 +376,12 @@ bool DaikinS21::run_queries(std::vector<std::string> queries) {
 }
 
 void DaikinS21::update() {
+  ESP_LOGI(TAG, "s21 update() start");
+
   std::vector<std::string> queries = {"F1", "F5", "Rd"};
   // These queries might fail but they won't affect the basic functionality
-  std::vector<std::string> failable_queries = {"F9", "RH", "RI", "Ra", "RL"};
+//  std::vector<std::string> failable_queries = {"F9", "RH", "RI", "Ra", "RL"};
+  std::vector<std::string> failable_queries = {"RH", "RI", "Ra", "RL"};
   if (this->run_queries(queries)) {
     this->run_queries(failable_queries);
     if(!this->ready) {
@@ -394,6 +404,8 @@ void DaikinS21::update() {
                                           "RX", "RD", "M",  "FU0F"};
   this->run_queries(experiments);
 #endif
+
+  ESP_LOGI(TAG, "s21 update() end, ready=%s", this->ready ? "YES" : "NO");
 }
 
 void DaikinS21::dump_state() {
@@ -432,7 +444,7 @@ void DaikinS21::set_daikin_climate_settings(bool power_on,
     (uint8_t) fan_mode
   };
   // clang-format on
-  ESP_LOGD(TAG, "Sending basic climate CMD (D1): %s", str_repr(cmd).c_str());
+  ESP_LOGI(TAG, "Sending basic climate CMD (D1): %s", str_repr(cmd).c_str());
   if (!this->send_cmd({'D', '1'}, cmd)) {
     ESP_LOGW(TAG, "Failed basic climate CMD");
   } else {
@@ -445,7 +457,7 @@ void DaikinS21::set_swing_settings(bool swing_v, bool swing_h) {
       (uint8_t) ('0' + (swing_h ? 2 : 0) + (swing_v ? 1 : 0) +
                  (swing_h && swing_v ? 4 : 0)),
       (uint8_t) (swing_v || swing_h ? '?' : '0'), '0', '0'};
-  ESP_LOGD(TAG, "Sending swing CMD (D5): %s", str_repr(cmd).c_str());
+  ESP_LOGI(TAG, "Sending swing CMD (D5): %s", str_repr(cmd).c_str());
   if (!this->send_cmd({'D', '5'}, cmd)) {
     ESP_LOGW(TAG, "Failed swing CMD");
   } else {
@@ -455,6 +467,9 @@ void DaikinS21::set_swing_settings(bool swing_v, bool swing_h) {
 
 bool DaikinS21::send_cmd(std::vector<uint8_t> code,
                          std::vector<uint8_t> payload) {
+  ESP_LOGI(TAG, "send_cmd() start: code=%s payload=%s",
+           str_repr(code).c_str(), str_repr(payload).c_str());
+
   std::vector<uint8_t> frame;
   uint8_t byte;
 
@@ -480,6 +495,7 @@ bool DaikinS21::send_cmd(std::vector<uint8_t> code,
     return false;
   }
 
+  ESP_LOGI(TAG, "send_cmd() OK");
   return true;
 }
 

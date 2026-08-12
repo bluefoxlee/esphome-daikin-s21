@@ -401,8 +401,9 @@ void DaikinS21Climate::update() {
 }
 
 void DaikinS21Climate::control(const climate::ClimateCall &call) {
-  float setpoint = this->target_temperature;
   bool set_basic = false;
+  bool set_fan = false;
+  bool control_command_succeeded = false;
 
   if (call.get_mode().has_value()) {
     climate::ClimateMode climate_mode = call.get_mode().value();
@@ -426,39 +427,49 @@ void DaikinS21Climate::control(const climate::ClimateCall &call) {
   }
   if (call.get_fan_mode().has_value()) {
     this->set_fan_mode_(call.get_fan_mode().value());
-    this->last_fan_command_ = millis();
-    this->fan_command_pending_ = true;
+    set_fan = true;
     set_basic = true;
   }
   if (call.has_custom_fan_mode()) {
     auto req = call.get_custom_fan_mode();  // StringRef
     this->set_custom_fan_mode_(req.c_str(), req.size());
-    this->last_fan_command_ = millis();
-    this->fan_command_pending_ = true;
+    set_fan = true;
     set_basic = true;
   }
 
   if (set_basic) {
-    this->last_control_command_ = millis();
-    this->control_command_pending_ = true;
-    this->set_s21_climate();
+    const bool success = this->set_s21_climate();
+    if (success) {
+      this->last_control_command_ = millis();
+      control_command_succeeded = true;
+    }
+    if (set_fan) {
+      this->fan_command_pending_ = success;
+      if (success) {
+        this->last_fan_command_ = millis();
+      }
+    }
   }
 
   if (call.get_swing_mode().has_value()) {
     climate::ClimateSwingMode swing_mode = call.get_swing_mode().value();
-    this->swing_mode = swing_mode;
-    this->last_control_command_ = millis();
-    this->control_command_pending_ = true;
-    this->s21->set_swing_settings(this->e2d_swing_v(swing_mode),
-                                  this->e2d_swing_h(swing_mode));
+    const bool success = this->s21->set_swing_settings(
+        this->e2d_swing_v(swing_mode), this->e2d_swing_h(swing_mode));
+    if (success) {
+      this->swing_mode = swing_mode;
+      this->last_control_command_ = millis();
+      control_command_succeeded = true;
+    }
   }
+
+  this->control_command_pending_ = control_command_succeeded;
 
   // Publish the requested state immediately. The regular S21 polling cycle
   // will reconcile it with the unit without blocking the API control call.
   this->publish_state();
 }
 
-void DaikinS21Climate::set_s21_climate() {
+bool DaikinS21Climate::set_s21_climate() {
   this->expected_s21_setpoint =
       this->calc_s21_setpoint(this->target_temperature);
   ESP_LOGI(TAG, "Controlling S21 climate:");
@@ -476,16 +487,19 @@ void DaikinS21Climate::set_s21_climate() {
 
   ESP_LOGI(TAG, "  Fan: %s",
            daikin_fan_mode_to_string(daikin_fan_mode).c_str());
-  this->s21->set_daikin_climate_settings(
+  const bool success = this->s21->set_daikin_climate_settings(
       this->mode != climate::CLIMATE_MODE_OFF,
       this->e2d_climate_mode(this->mode), this->expected_s21_setpoint,
       daikin_fan_mode);
+  if (!success)
+    return false;
   // HVAC unit seems to take a few seconds to begin reporting mode and setpoint
   // changes back to the controller, so when modifying settings, setpoint checks
   // are skipped to avoid unexpected setpoint updates, especially when changing
   // modes.
   this->skip_setpoint_checks = 2;
   this->save_setpoint(this->target_temperature);
+  return true;
 }
 
 }  // namespace daikin_s21

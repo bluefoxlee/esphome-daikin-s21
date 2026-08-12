@@ -511,7 +511,7 @@ void DaikinS21::dump_state() {
   ESP_LOGD(TAG, "** END STATE *****************************");
 }
 
-void DaikinS21::set_daikin_climate_settings(bool power_on,
+bool DaikinS21::set_daikin_climate_settings(bool power_on,
                                             DaikinClimateMode mode,
                                             float setpoint,
                                             DaikinFanMode fan_mode) {
@@ -526,10 +526,12 @@ void DaikinS21::set_daikin_climate_settings(bool power_on,
   ESP_LOGI(TAG, "Sending basic climate CMD (D1): %s", str_repr(cmd).c_str());
   if (!this->send_cmd({'D', '1'}, cmd)) {
     ESP_LOGW(TAG, "Failed basic climate CMD");
+    return false;
   }
+  return true;
 }
 
-void DaikinS21::set_swing_settings(bool swing_v, bool swing_h) {
+bool DaikinS21::set_swing_settings(bool swing_v, bool swing_h) {
   std::vector<uint8_t> cmd = {
       (uint8_t) ('0' + (swing_h ? 2 : 0) + (swing_v ? 1 : 0) +
                  (swing_h && swing_v ? 4 : 0)),
@@ -537,7 +539,9 @@ void DaikinS21::set_swing_settings(bool swing_v, bool swing_h) {
   ESP_LOGI(TAG, "Sending swing CMD (D5): %s", str_repr(cmd).c_str());
   if (!this->send_cmd({'D', '5'}, cmd)) {
     ESP_LOGW(TAG, "Failed swing CMD");
+    return false;
   }
+  return true;
 }
 
 bool DaikinS21::send_cmd(std::vector<uint8_t> code,

@@ -77,7 +77,7 @@ class DaikinS21Climate : public climate::Climate,
   void save_setpoint(float value);
   optional<float> load_setpoint(ESPPreferenceObject &pref);
   optional<float> load_setpoint(DaikinClimateMode mode);
-  void set_s21_climate();
+  bool set_s21_climate();
 };
 
 }  // namespace daikin_s21

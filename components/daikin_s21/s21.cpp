@@ -390,8 +390,10 @@ bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
         case 'd':  // Compressor state / frequency? Idle if 0.
           if (payload.size() < 3)
             return false;
-          this->idle =
-              (payload[0] == '0' && payload[1] == '0' && payload[2] == '0');
+          this->compressor_hz = bytes_to_num(payload);
+          if (this->compressor_hz == 999)
+            this->compressor_hz = 0;
+          this->idle = (this->compressor_hz == 0);
           return true;
         default:
           if (payload.size() > 3) {

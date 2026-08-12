@@ -52,6 +52,7 @@ class DaikinS21 : public PollingComponent {
   float get_temp_outside() { return this->temp_outside / 10.0; }
   float get_temp_coil() { return this->temp_coil / 10.0; }
   uint16_t get_fan_rpm() { return this->fan_rpm; }
+  uint16_t get_compressor_frequency() { return this->compressor_hz; }
   bool is_idle() { return this->idle; }
   bool get_swing_h() { return this->swing_h; }
   bool get_swing_v() { return this->swing_v; }
@@ -84,6 +85,7 @@ class DaikinS21 : public PollingComponent {
   int16_t temp_outside = 0;
   int16_t temp_coil = 0;
   uint16_t fan_rpm = 0;
+  uint16_t compressor_hz = 0;
   bool idle = true;
 };
 

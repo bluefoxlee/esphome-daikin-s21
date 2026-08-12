@@ -20,6 +20,10 @@ void DaikinS21Sensor::update() {
   if (this->fan_speed_sensor_ != nullptr) {
     this->fan_speed_sensor_->publish_state(this->s21->get_fan_rpm());
   }
+  if (this->compressor_frequency_sensor_ != nullptr) {
+    this->compressor_frequency_sensor_->publish_state(
+        this->s21->get_compressor_frequency());
+  }
 }
 
 void DaikinS21Sensor::dump_config() {
@@ -28,6 +32,7 @@ void DaikinS21Sensor::dump_config() {
   LOG_SENSOR("  ", "Temperature Outside", this->temp_outside_sensor_);
   LOG_SENSOR("  ", "Temperature Coil", this->temp_coil_sensor_);
   LOG_SENSOR("  ", "Fan Speed", this->fan_speed_sensor_);
+  LOG_SENSOR("  ", "Compressor Frequency", this->compressor_frequency_sensor_);
 }
 
 }  // namespace daikin_s21

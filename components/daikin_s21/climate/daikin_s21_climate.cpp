@@ -329,12 +329,20 @@ void DaikinS21Climate::update() {
     ESP_LOGD(TAG, "  Offset: %.1f", this->get_room_temp_offset());
   }
   if (this->s21->is_ready()) {
-    if (this->s21->is_power_on()) {
-      this->mode = this->d2e_climate_mode(this->s21->get_climate_mode());
-      this->action = this->d2e_climate_action();
-    } else {
-      this->mode = climate::CLIMATE_MODE_OFF;
-      this->action = climate::CLIMATE_ACTION_OFF;
+    const bool hold_control_feedback =
+        this->control_command_pending_ &&
+        (millis() - this->last_control_command_ < FAN_FEEDBACK_HOLDOFF_MS);
+    if (!hold_control_feedback) {
+      this->control_command_pending_ = false;
+      if (this->s21->is_power_on()) {
+        this->mode = this->d2e_climate_mode(this->s21->get_climate_mode());
+        this->action = this->d2e_climate_action();
+      } else {
+        this->mode = climate::CLIMATE_MODE_OFF;
+        this->action = climate::CLIMATE_ACTION_OFF;
+      }
+      this->swing_mode = this->d2e_swing_mode(this->s21->get_swing_v(),
+                                              this->s21->get_swing_h());
     }
     const bool hold_fan_feedback =
         this->fan_command_pending_ &&
@@ -355,8 +363,6 @@ void DaikinS21Climate::update() {
         }
       }
     }
-    this->swing_mode = this->d2e_swing_mode(this->s21->get_swing_v(),
-                                            this->s21->get_swing_h());
     this->current_temperature = this->get_effective_current_temperature();
 
     if (this->should_check_setpoint(this->mode)) {
@@ -433,16 +439,23 @@ void DaikinS21Climate::control(const climate::ClimateCall &call) {
   }
 
   if (set_basic) {
+    this->last_control_command_ = millis();
+    this->control_command_pending_ = true;
     this->set_s21_climate();
   }
 
   if (call.get_swing_mode().has_value()) {
     climate::ClimateSwingMode swing_mode = call.get_swing_mode().value();
+    this->swing_mode = swing_mode;
+    this->last_control_command_ = millis();
+    this->control_command_pending_ = true;
     this->s21->set_swing_settings(this->e2d_swing_v(swing_mode),
                                   this->e2d_swing_h(swing_mode));
   }
 
-  this->update();
+  // Publish the requested state immediately. The regular S21 polling cycle
+  // will reconcile it with the unit without blocking the API control call.
+  this->publish_state();
 }
 
 void DaikinS21Climate::set_s21_climate() {

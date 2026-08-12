@@ -55,6 +55,8 @@ class DaikinS21Climate : public climate::Climate,
   uint8_t skip_setpoint_checks = 0;
   uint16_t setpoint_interval = 0;
   uint32_t last_setpoint_check = 0;
+  uint32_t last_fan_command_ = 0;
+  bool fan_command_pending_ = false;
 
 
   ESPPreferenceObject auto_setpoint_pref;

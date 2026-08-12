@@ -13,6 +13,8 @@ namespace daikin_s21 {
 
 #define S21_RESPONSE_TIMEOUT 250
 #define S21_MAX_FRAME_SIZE 64
+#define OPTIONAL_QUERY_FAILURE_LIMIT 3
+#define OPTIONAL_QUERY_RETRY_CYCLES 30
 
 static const char *const TAG = "daikin_s21";
 
@@ -365,6 +367,11 @@ bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
             return false;
           this->temp_inside = temp_bytes_to_c10(payload);
           return true;
+        case 'G':  // Fan mode (more accurate than F1; includes Silent)
+          if (payload.empty())
+            return false;
+          this->fan = (DaikinFanMode) payload[0];
+          return true;
         case 'I':  // Coil temperature
           if (payload.size() < 4)
             return false;
@@ -413,15 +420,47 @@ bool DaikinS21::run_queries(std::vector<std::string> queries) {
   return success;  // True if all queries successful
 }
 
+void DaikinS21::run_optional_queries() {
+  static const char *const queries[] = {"RG", "RH", "RI", "Ra", "RL"};
+
+  for (uint8_t i = 0; i < 5; i++) {
+    if (!this->optional_query_supported_[i] &&
+        this->optional_query_retry_cycles_[i] > 0) {
+      this->optional_query_retry_cycles_[i]--;
+      continue;
+    }
+
+    std::vector<uint8_t> code(queries[i], queries[i] + 2);
+    if (this->s21_query(code)) {
+      this->optional_query_supported_[i] = true;
+      this->optional_query_failures_[i] = 0;
+      this->optional_query_retry_cycles_[i] = 0;
+      continue;
+    }
+
+    // Once a query has worked, keep polling it normally. A later failure is
+    // treated as a transient UART error rather than loss of feature support.
+    if (this->optional_query_supported_[i])
+      continue;
+
+    if (this->optional_query_failures_[i] < OPTIONAL_QUERY_FAILURE_LIMIT)
+      this->optional_query_failures_[i]++;
+
+    if (this->optional_query_failures_[i] >= OPTIONAL_QUERY_FAILURE_LIMIT) {
+      this->optional_query_failures_[i] = 0;
+      this->optional_query_retry_cycles_[i] = OPTIONAL_QUERY_RETRY_CYCLES;
+      ESP_LOGW(TAG, "Optional query %s unsupported; retrying in %u cycles",
+               queries[i], static_cast<unsigned>(OPTIONAL_QUERY_RETRY_CYCLES));
+    }
+  }
+}
+
 void DaikinS21::update() {
   ESP_LOGI(TAG, "s21 update() start");
 
   std::vector<std::string> queries = {"F1", "F5", "Rd"};
-  // These queries might fail but they won't affect the basic functionality
-//  std::vector<std::string> failable_queries = {"F9", "RH", "RI", "Ra", "RL"};
-  std::vector<std::string> failable_queries = {"RH", "RI", "Ra", "RL"};
   if (this->run_queries(queries)) {
-    this->run_queries(failable_queries);
+    this->run_optional_queries();
     if(!this->ready) {
       ESP_LOGI(TAG, "Daikin S21 Ready");
       this->ready = true;

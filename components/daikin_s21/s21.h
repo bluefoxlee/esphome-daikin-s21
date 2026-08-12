@@ -62,6 +62,7 @@ class DaikinS21 : public PollingComponent {
   bool s21_query(std::vector<uint8_t> code);
   bool parse_response(std::vector<uint8_t> rcode, std::vector<uint8_t> payload);
   bool run_queries(std::vector<std::string> queries);
+  void run_optional_queries();
   void dump_state();
   void check_uart_settings();
 
@@ -69,6 +70,9 @@ class DaikinS21 : public PollingComponent {
   uart::UARTComponent *rx_uart{nullptr};
   bool ready = false;
   bool debug_protocol = false;
+  uint8_t optional_query_failures_[5] = {0, 0, 0, 0, 0};
+  uint8_t optional_query_retry_cycles_[5] = {0, 0, 0, 0, 0};
+  bool optional_query_supported_[5] = {false, false, false, false, false};
 
   bool power_on = false;
   DaikinClimateMode mode = DaikinClimateMode::Disabled;

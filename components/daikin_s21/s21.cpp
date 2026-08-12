@@ -12,6 +12,7 @@ namespace daikin_s21 {
 #define NAK 21
 
 #define S21_RESPONSE_TIMEOUT 250
+#define S21_MAX_FRAME_SIZE 64
 
 static const char *const TAG = "daikin_s21";
 
@@ -65,6 +66,16 @@ uint8_t s21_checksum(uint8_t *bytes, uint8_t len) {
 
 uint8_t s21_checksum(std::vector<uint8_t> bytes) {
   return s21_checksum(&bytes[0], bytes.size());
+}
+
+uint8_t s21_escaped_checksum(uint8_t checksum) {
+  // S21 offsets checksum values that would otherwise be interpreted as
+  // protocol control characters inside a frame.
+  if (checksum == STX || checksum == ETX || checksum == ACK ||
+      checksum == NAK) {
+    checksum += 2;
+  }
+  return checksum;
 }
 
 int16_t bytes_to_num(uint8_t *bytes, size_t len) {
@@ -222,22 +233,26 @@ bool DaikinS21::read_frame(std::vector<uint8_t> &payload) {
       }
       if (byte == ETX) {
         reading = false;
+        if (bytes.size() < 3) {
+          ESP_LOGW(TAG, "Frame too short: %u bytes",
+                   static_cast<unsigned>(bytes.size()));
+          return false;
+        }
         uint8_t frame_csum = bytes[bytes.size() - 1];
         bytes.pop_back();
-        uint8_t calc_csum = s21_checksum(bytes);
+        uint8_t calc_csum = s21_escaped_checksum(s21_checksum(bytes));
         if (calc_csum != frame_csum) {
-          // This sometimes happens with G9 reply, no idea why
-          if (bytes[0] == 0x47 && bytes[1] == 0x39) {
-            calc_csum += 2;
-          }
-          if (calc_csum != frame_csum) {
-            ESP_LOGW(TAG, "Checksum mismatch: %x (frame) != %x (calc from %s)",
-            frame_csum, calc_csum,
-            hex_repr(&bytes[0], bytes.size()).c_str());
-            return false;
-          }
+          ESP_LOGW(TAG, "Checksum mismatch: %x (frame) != %x (calc from %s)",
+                   frame_csum, calc_csum,
+                   hex_repr(&bytes[0], bytes.size()).c_str());
+          return false;
         }
         break;
+      }
+      if (bytes.size() >= S21_MAX_FRAME_SIZE) {
+        ESP_LOGW(TAG, "Frame exceeds maximum length of %u bytes",
+                 static_cast<unsigned>(S21_MAX_FRAME_SIZE));
+        return false;
       }
       bytes.push_back(byte);
     }
@@ -254,7 +269,8 @@ void DaikinS21::write_frame(std::vector<uint8_t> frame) {
   ESP_LOGI(TAG, "write_frame(): %s", str_repr(frame).c_str());
   this->tx_uart->write_byte(STX);
   this->tx_uart->write_array(frame);
-  this->tx_uart->write_byte(s21_checksum(&frame[0], frame.size()));
+  this->tx_uart->write_byte(
+      s21_escaped_checksum(s21_checksum(&frame[0], frame.size())));
   this->tx_uart->write_byte(ETX);
   this->tx_uart->flush();
 }
@@ -306,6 +322,12 @@ bool DaikinS21::s21_query(std::vector<uint8_t> code) {
 
 bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
                                std::vector<uint8_t> payload) {
+  if (rcode.size() < 2) {
+    ESP_LOGW(TAG, "Response code too short: %u bytes",
+             static_cast<unsigned>(rcode.size()));
+    return false;
+  }
+
   if (this->debug_protocol) {
     ESP_LOGD(TAG, "S21: %s -> %s (%d)", str_repr(rcode).c_str(),
              str_repr(payload).c_str(), payload.size());
@@ -315,16 +337,22 @@ bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
     case 'G':      // F -> G
       switch (rcode[1]) {
         case '1':  // F1 -> Basic State
+          if (payload.size() < 4)
+            return false;
           this->power_on = (payload[0] == '1');
           this->mode = (DaikinClimateMode) payload[1];
           this->setpoint = ((payload[2] - 28) * 5);  // Celsius * 10
           this->fan = (DaikinFanMode) payload[3];
           return true;
         case '5':  // F5 -> G5 -- Swing state
+          if (payload.empty())
+            return false;
           this->swing_v = payload[0] & 1;
           this->swing_h = payload[0] & 2;
           return true;
         case '9':  // F9 -> G9 -- Inside temperature
+          if (payload.size() < 2)
+            return false;
           this->temp_inside = temp_f9_byte_to_c10(&payload[0]);
           this->temp_outside = temp_f9_byte_to_c10(&payload[1]);
           return true;
@@ -333,18 +361,28 @@ bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
     case 'S':      // R -> S
       switch (rcode[1]) {
         case 'H':  // Inside temperature
+          if (payload.size() < 4)
+            return false;
           this->temp_inside = temp_bytes_to_c10(payload);
           return true;
         case 'I':  // Coil temperature
+          if (payload.size() < 4)
+            return false;
           this->temp_coil = temp_bytes_to_c10(payload);
           return true;
         case 'a':  // Outside temperature
+          if (payload.size() < 4)
+            return false;
           this->temp_outside = temp_bytes_to_c10(payload);
           return true;
         case 'L':  // Fan speed
+          if (payload.size() < 3)
+            return false;
           this->fan_rpm = bytes_to_num(payload) * 10;
           return true;
         case 'd':  // Compressor state / frequency? Idle if 0.
+          if (payload.size() < 3)
+            return false;
           this->idle =
               (payload[0] == '0' && payload[1] == '0' && payload[2] == '0');
           return true;

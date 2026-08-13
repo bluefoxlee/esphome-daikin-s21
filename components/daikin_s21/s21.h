@@ -46,7 +46,8 @@ class DaikinS21 : public PollingComponent {
   bool set_daikin_climate_settings(bool power_on, DaikinClimateMode mode,
                                    float setpoint, DaikinFanMode fan_mode);
   bool set_swing_settings(bool swing_v, bool swing_h);
-  bool send_cmd(std::vector<uint8_t> code, std::vector<uint8_t> payload);
+  bool send_cmd(const std::vector<uint8_t> &code,
+                const std::vector<uint8_t> &payload);
 
   float get_temp_inside() { return this->temp_inside / 10.0; }
   float get_temp_outside() { return this->temp_outside / 10.0; }
@@ -59,10 +60,11 @@ class DaikinS21 : public PollingComponent {
 
  protected:
   bool read_frame(std::vector<uint8_t> &payload);
-  void write_frame(std::vector<uint8_t> payload);
-  bool s21_query(std::vector<uint8_t> code);
-  bool parse_response(std::vector<uint8_t> rcode, std::vector<uint8_t> payload);
-  bool run_queries(std::vector<std::string> queries);
+  void write_frame(const std::vector<uint8_t> &payload);
+  bool s21_query(const std::vector<uint8_t> &code);
+  bool parse_response(const std::vector<uint8_t> &rcode,
+                      const std::vector<uint8_t> &payload);
+  bool run_queries(const std::vector<std::string> &queries);
   void run_optional_queries();
   void dump_state();
   void check_uart_settings();

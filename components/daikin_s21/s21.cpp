@@ -58,16 +58,16 @@ std::string daikin_fan_mode_to_string(DaikinFanMode mode) {
   }
 }
 
-uint8_t s21_checksum(uint8_t *bytes, uint8_t len) {
+uint8_t s21_checksum(const uint8_t *bytes, size_t len) {
   uint8_t checksum = 0;
-  for (uint8_t i = 0; i < len; i++) {
+  for (size_t i = 0; i < len; i++) {
     checksum += bytes[i];
   }
   return checksum;
 }
 
-uint8_t s21_checksum(std::vector<uint8_t> bytes) {
-  return s21_checksum(&bytes[0], bytes.size());
+uint8_t s21_checksum(const std::vector<uint8_t> &bytes) {
+  return s21_checksum(bytes.data(), bytes.size());
 }
 
 uint8_t s21_escaped_checksum(uint8_t checksum) {
@@ -80,7 +80,7 @@ uint8_t s21_escaped_checksum(uint8_t checksum) {
   return checksum;
 }
 
-int16_t bytes_to_num(uint8_t *bytes, size_t len) {
+int16_t bytes_to_num(const uint8_t *bytes, size_t len) {
   // <ones><tens><hundreds><neg/pos>
   int16_t val = 0;
   val = bytes[0] - '0';
@@ -91,17 +91,21 @@ int16_t bytes_to_num(uint8_t *bytes, size_t len) {
   return val;
 }
 
-int16_t bytes_to_num(std::vector<uint8_t> &bytes) {
-  return bytes_to_num(&bytes[0], bytes.size());
+int16_t bytes_to_num(const std::vector<uint8_t> &bytes) {
+  return bytes_to_num(bytes.data(), bytes.size());
 }
 
-int16_t temp_bytes_to_c10(uint8_t *bytes) { return bytes_to_num(bytes, 4); }
-
-int16_t temp_bytes_to_c10(std::vector<uint8_t> &bytes) {
-  return temp_bytes_to_c10(&bytes[0]);
+int16_t temp_bytes_to_c10(const uint8_t *bytes) {
+  return bytes_to_num(bytes, 4);
 }
 
-int16_t temp_f9_byte_to_c10(uint8_t *bytes) { return (*bytes / 2 - 64) * 10; }
+int16_t temp_bytes_to_c10(const std::vector<uint8_t> &bytes) {
+  return temp_bytes_to_c10(bytes.data());
+}
+
+int16_t temp_f9_byte_to_c10(const uint8_t *bytes) {
+  return (*bytes / 2 - 64) * 10;
+}
 
 uint8_t c10_to_setpoint_byte(int16_t setpoint) {
   return (setpoint + 3) / 5 + 28;
@@ -156,7 +160,7 @@ void DaikinS21::dump_config() {
 }
 
 // Adapated from ESPHome UART debugger
-std::string hex_repr(uint8_t *bytes, size_t len) {
+std::string hex_repr(const uint8_t *bytes, size_t len) {
   std::string res;
   char buf[5];
   for (size_t i = 0; i < len; i++) {
@@ -169,7 +173,7 @@ std::string hex_repr(uint8_t *bytes, size_t len) {
 }
 
 // Adapated from ESPHome UART debugger
-std::string str_repr(uint8_t *bytes, size_t len) {
+std::string str_repr(const uint8_t *bytes, size_t len) {
   std::string res;
   char buf[5];
   for (size_t i = 0; i < len; i++) {
@@ -205,8 +209,8 @@ std::string str_repr(uint8_t *bytes, size_t len) {
   return res;
 }
 
-std::string str_repr(std::vector<uint8_t> &bytes) {
-  return str_repr(&bytes[0], bytes.size());
+std::string str_repr(const std::vector<uint8_t> &bytes) {
+  return str_repr(bytes.data(), bytes.size());
 }
 
 bool DaikinS21::read_frame(std::vector<uint8_t> &payload) {
@@ -246,7 +250,7 @@ bool DaikinS21::read_frame(std::vector<uint8_t> &payload) {
         if (calc_csum != frame_csum) {
           ESP_LOGW(TAG, "Checksum mismatch: %x (frame) != %x (calc from %s)",
                    frame_csum, calc_csum,
-                   hex_repr(&bytes[0], bytes.size()).c_str());
+                   hex_repr(bytes.data(), bytes.size()).c_str());
           return false;
         }
         break;
@@ -267,17 +271,17 @@ bool DaikinS21::read_frame(std::vector<uint8_t> &payload) {
   return true;
 }
 
-void DaikinS21::write_frame(std::vector<uint8_t> frame) {
+void DaikinS21::write_frame(const std::vector<uint8_t> &frame) {
   ESP_LOGI(TAG, "write_frame(): %s", str_repr(frame).c_str());
   this->tx_uart->write_byte(STX);
-  this->tx_uart->write_array(frame);
+  this->tx_uart->write_array(frame.data(), frame.size());
   this->tx_uart->write_byte(
-      s21_escaped_checksum(s21_checksum(&frame[0], frame.size())));
+      s21_escaped_checksum(s21_checksum(frame.data(), frame.size())));
   this->tx_uart->write_byte(ETX);
   this->tx_uart->flush();
 }
 
-bool DaikinS21::s21_query(std::vector<uint8_t> code) {
+bool DaikinS21::s21_query(const std::vector<uint8_t> &code) {
   std::string c;
   for (size_t i = 0; i < code.size(); i++) {
     c += code[i];
@@ -322,8 +326,8 @@ bool DaikinS21::s21_query(std::vector<uint8_t> code) {
   return ok;
 }
 
-bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
-                               std::vector<uint8_t> payload) {
+bool DaikinS21::parse_response(const std::vector<uint8_t> &rcode,
+                               const std::vector<uint8_t> &payload) {
   if (rcode.size() < 2) {
     ESP_LOGW(TAG, "Response code too short: %u bytes",
              static_cast<unsigned>(rcode.size()));
@@ -397,7 +401,7 @@ bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
           return true;
         default:
           if (payload.size() > 3) {
-            int8_t temp = temp_bytes_to_c10(payload);
+            int16_t temp = temp_bytes_to_c10(payload);
             ESP_LOGD(TAG, "Unknown temp: %s -> %s -> %.1f C (%.1f F)",
                      str_repr(rcode).c_str(), str_repr(payload).c_str(),
                      c10_c(temp), c10_f(temp));
@@ -410,10 +414,10 @@ bool DaikinS21::parse_response(std::vector<uint8_t> rcode,
   return false;
 }
 
-bool DaikinS21::run_queries(std::vector<std::string> queries) {
+bool DaikinS21::run_queries(const std::vector<std::string> &queries) {
   bool success = true;
 
-  for (auto q : queries) {
+  for (const auto &q : queries) {
     ESP_LOGI(TAG, "run_queries(): %s", q.c_str());
     std::vector<uint8_t> code(q.begin(), q.end());
     success = this->s21_query(code) && success;
@@ -460,7 +464,7 @@ void DaikinS21::run_optional_queries() {
 void DaikinS21::update() {
   ESP_LOGI(TAG, "s21 update() start");
 
-  std::vector<std::string> queries = {"F1", "F5", "Rd"};
+  static const std::vector<std::string> queries = {"F1", "F5", "Rd"};
   if (this->run_queries(queries)) {
     this->run_optional_queries();
     if(!this->ready) {
@@ -500,7 +504,7 @@ void DaikinS21::dump_state() {
   ESP_LOGD(TAG, "    Fan: %s (%d rpm)",
            daikin_fan_mode_to_string(this->fan).c_str(), this->fan_rpm);
   ESP_LOGD(TAG, "  Swing: H:%s V:%s", YESNO(this->swing_h),
-           YESNO(this->swing_h));
+           YESNO(this->swing_v));
   ESP_LOGD(TAG, " Inside: %.1f C (%.1f F)", c10_c(this->temp_inside),
            c10_f(this->temp_inside));
   ESP_LOGD(TAG, "Outside: %.1f C (%.1f F)", c10_c(this->temp_outside),
@@ -544,8 +548,8 @@ bool DaikinS21::set_swing_settings(bool swing_v, bool swing_h) {
   return true;
 }
 
-bool DaikinS21::send_cmd(std::vector<uint8_t> code,
-                         std::vector<uint8_t> payload) {
+bool DaikinS21::send_cmd(const std::vector<uint8_t> &code,
+                         const std::vector<uint8_t> &payload) {
   ESP_LOGI(TAG, "send_cmd() start: code=%s payload=%s",
            str_repr(code).c_str(), str_repr(payload).c_str());
 
